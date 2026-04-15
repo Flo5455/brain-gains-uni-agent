@@ -11,7 +11,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as LucideIcons from 'lucide-react';
 import { INITIAL_DECKS, INITIAL_CARDS, parseFlashcards, shuffleArray, BUNDLED_DECK_ID, DEFAULT_STATS } from './lib/bundledDecks.js';
 import UserSelect from './components/UserSelect.jsx';
-import { loadUserDecks, loadUserStats, saveUserStats, syncDecksToSupabase, importLocalStorageData } from './lib/storage.js';
+import { loadUserDecks, loadUserStats, saveUserStats, syncDecksToSupabase, importLocalStorageData, loadAllUsersWithStats } from './lib/storage.js';
 const { BrainCircuit, BarChart3, GraduationCap, RefreshCcw, CheckCircle2, AlertCircle, Play, Award, ChevronRight, Sparkles, Loader2, Library, Trash2, Filter, Search, ArrowUpDown, Calendar, ChevronLeft, Plus, Download, Upload, Copy, Settings, ArrowLeft, Flame, Trophy, Star, X, Coffee, Zap, Target, Crown, Rocket, Compass, Heart, Lightbulb, Clock, Shield, Activity, Bell, Gift, Key, Flag, Smile, Navigation, ZapOff, BookOpen, Brain, Gauge, RotateCcw, User } = LucideIcons;
 
 // --- ANIMATED SVG HINT COMPONENTS ---
@@ -269,6 +269,13 @@ function App() {
   const [activeTab, setActiveTab] = useState('learn');
   const [userStats, setUserStats] = useState({ ...DEFAULT_STATS });
 
+  // --- Tages-Lernziel ---
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalInput, setGoalInput] = useState('');
+
+  // --- Lerngruppe ---
+  const [groupMembers, setGroupMembers] = useState([]);
+
   // Daten aus Supabase laden wenn User ausgewählt wird
   useEffect(() => {
     if (!currentUser || currentUser.id === 'local') return;
@@ -301,6 +308,34 @@ function App() {
       setIsLoading(false);
     });
   }, [currentUser]);
+
+  // Lerngruppe laden wenn User ausgewählt wird
+  useEffect(() => {
+    if (!currentUser || currentUser.id === 'local') return;
+    loadAllUsersWithStats().then(members => {
+      setGroupMembers(members);
+    }).catch(err => {
+      console.error('Fehler beim Laden der Lerngruppe:', err);
+    });
+  }, [currentUser, userStats]);
+
+  // Tages-Lernziel: Modal anzeigen wenn Fach geöffnet wird und noch kein Ziel gesetzt
+  useEffect(() => {
+    if (activeDeckId && userStats.todayGoalDate !== new Date().toDateString()) {
+      setShowGoalModal(true);
+      setGoalInput('');
+    }
+  }, [activeDeckId]);
+
+  const handleGoalSubmit = (goal) => {
+    setUserStats(prev => ({
+      ...prev,
+      todayGoalText: goal || '',
+      todayGoalDate: new Date().toDateString()
+    }));
+    setShowGoalModal(false);
+    setGoalInput('');
+  };
 
   // localStorage-Import durchführen
   const handleImport = async () => {
@@ -698,8 +733,14 @@ function App() {
             )}
             {!activeDeckId && <span className="font-bold text-base tracking-tight text-white shrink-0">Brain Gains</span>}
             {activeDeck && (
-              <div className="flex items-center min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-medium text-slate-300 truncate max-w-[80px] sm:max-w-xs hidden sm:block">{activeDeck.name}</span>
+                {userStats.todayGoalText && userStats.todayGoalDate === new Date().toDateString() && (
+                  <span className="hidden sm:flex items-center gap-1 text-xs text-sky-400/70 truncate max-w-[150px]">
+                    <Target className="w-3 h-3 shrink-0" />
+                    {userStats.todayGoalText}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -761,7 +802,7 @@ function App() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         {!activeDeckId ? (
-          <DashboardTab decks={decks} setDecks={setDecks} onSelectDeck={setActiveDeckId} parseFlashcards={parseFlashcards} shuffleArray={shuffleArray} userStats={userStats} />
+          <DashboardTab decks={decks} setDecks={setDecks} onSelectDeck={setActiveDeckId} parseFlashcards={parseFlashcards} shuffleArray={shuffleArray} userStats={userStats} groupMembers={groupMembers} currentUser={currentUser} />
         ) : (
           <>
             {activeTab === 'learn' && <LearnTab cards={cards} onReview={processCardReview} userStats={userStats} calculateNextIntervals={calculateNextIntervals} LEARN_AHEAD_LIMIT={LEARN_AHEAD_LIMIT} />}
@@ -788,6 +829,57 @@ function App() {
           onClose={() => setShowStatsModal(false)}
         />
       )}
+
+      {/* Tages-Lernziel Modal */}
+      <AnimatePresence>
+        {showGoalModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => { handleGoalSubmit(''); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-sky-500/10 rounded-xl flex items-center justify-center">
+                  <Target className="w-5 h-5 text-sky-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white">Was lernst du heute?</h3>
+              </div>
+              <input
+                type="text"
+                value={goalInput}
+                onChange={e => setGoalInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && goalInput.trim()) handleGoalSubmit(goalInput.trim()); }}
+                placeholder="z.B. Kapitel 3 wiederholen"
+                className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-500 mb-4 text-sm"
+                autoFocus
+              />
+              <button
+                onClick={() => { if (goalInput.trim()) handleGoalSubmit(goalInput.trim()); }}
+                disabled={!goalInput.trim()}
+                className="w-full bg-sky-500 hover:bg-sky-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-3 px-6 rounded-xl transition-colors mb-2"
+              >
+                Los geht's
+              </button>
+              <button
+                onClick={() => handleGoalSubmit('')}
+                className="w-full text-center text-sm text-slate-500 hover:text-slate-300 transition-colors py-1"
+              >
+                Überspringen
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -984,7 +1076,7 @@ function GamificationModal({ userStats, deckStats, currentDeckName, onClose }) {
 }
 
 // --- DASHBOARD TAB (Multi-Deck Management) ---
-function DashboardTab({ decks, setDecks, onSelectDeck, parseFlashcards, shuffleArray, userStats }) {
+function DashboardTab({ decks, setDecks, onSelectDeck, parseFlashcards, shuffleArray, userStats, groupMembers, currentUser }) {
   const [isCreating, setIsCreating] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
   const [newDeckCards, setNewDeckCards] = useState('');
@@ -1326,6 +1418,67 @@ function DashboardTab({ decks, setDecks, onSelectDeck, parseFlashcards, shuffleA
           </div>
         </div>
       </div>
+
+      {/* Lerngruppe-Sektion */}
+      {groupMembers.length > 0 && (
+        <div className="border-t border-slate-800 pt-8 mt-8">
+          <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+            <User className="w-5 h-5 text-sky-400" />
+            Deine Lerngruppe
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {groupMembers.map(member => {
+              const isCurrentUser = currentUser && member.id === currentUser.id;
+              const isLearningToday = member.stats.todayGoalDate === new Date().toDateString();
+              const memberStreak = member.stats.streak || 0;
+
+              return (
+                <div
+                  key={member.id}
+                  className={`bg-slate-900 border rounded-2xl p-4 flex items-center gap-4 transition-all ${
+                    isCurrentUser
+                      ? 'border-sky-500/50 ring-1 ring-sky-500/20'
+                      : 'border-slate-800'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                    isCurrentUser ? 'bg-sky-500/20' : 'bg-slate-800'
+                  }`}>
+                    <User className={`w-5 h-5 ${isCurrentUser ? 'text-sky-400' : 'text-slate-400'}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold text-sm truncate ${isCurrentUser ? 'text-sky-300' : 'text-white'}`}>
+                        {member.name}
+                      </span>
+                      {isCurrentUser && (
+                        <span className="text-[10px] bg-sky-500/20 text-sky-400 px-1.5 py-0.5 rounded font-bold shrink-0">Du</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      {memberStreak > 0 && (
+                        <span className="flex items-center gap-1 text-xs text-orange-400">
+                          <Flame className="w-3 h-3" />
+                          {memberStreak} Tage
+                        </span>
+                      )}
+                      {isLearningToday && (
+                        <span className="flex items-center gap-1 text-xs bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full">
+                          <Activity className="w-3 h-3" />
+                          Lernt gerade
+                        </span>
+                      )}
+                      {!isLearningToday && memberStreak === 0 && (
+                        <span className="text-xs text-slate-500">Noch kein Streak</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

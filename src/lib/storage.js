@@ -486,6 +486,38 @@ export async function importLocalStorageData(userId) {
   }
 }
 
+// ============================================================
+// Alle User mit Stats laden (für Lerngruppe)
+// ============================================================
+
+export async function loadAllUsersWithStats() {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data: users, error } = await supabase
+    .from('users')
+    .select('id, name, created_at')
+    .order('name');
+
+  if (error || !users) return [];
+
+  // Stats für alle User laden
+  const userIds = users.map(u => u.id);
+  const { data: allStats } = await supabase
+    .from('user_stats')
+    .select('user_id, stats')
+    .in('user_id', userIds);
+
+  const statsMap = {};
+  (allStats || []).forEach(s => {
+    statsMap[s.user_id] = { ...DEFAULT_STATS, ...s.stats };
+  });
+
+  return users.map(user => ({
+    ...user,
+    stats: statsMap[user.id] || { ...DEFAULT_STATS }
+  }));
+}
+
 /** Debounce-Wrapper für Supabase-Saves */
 export function createDebouncedSaver(fn, delay = 2000) {
   let timer = null;
