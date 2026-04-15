@@ -319,23 +319,35 @@ function App() {
     });
   }, [currentUser, userStats]);
 
-  // Tages-Lernziel: Modal anzeigen wenn Fach geöffnet wird und noch kein Ziel gesetzt
+  // Tages-Lernziel: Modal anzeigen wenn Fach geöffnet wird und noch kein Ziel für DIESES Deck gesetzt
   useEffect(() => {
-    if (activeDeckId && userStats.todayGoalDate !== new Date().toDateString()) {
-      setShowGoalModal(true);
-      setGoalInput('');
+    if (activeDeckId) {
+      const deckGoals = userStats.deckGoals || {};
+      const deckGoal = deckGoals[activeDeckId];
+      if (!deckGoal || deckGoal.date !== new Date().toDateString()) {
+        setShowGoalModal(true);
+        setGoalInput('');
+      }
     }
   }, [activeDeckId]);
 
   const handleGoalSubmit = (goal) => {
-    setUserStats(prev => ({
-      ...prev,
-      todayGoalText: goal || '',
-      todayGoalDate: new Date().toDateString()
-    }));
+    setUserStats(prev => {
+      const deckGoals = { ...(prev.deckGoals || {}) };
+      deckGoals[activeDeckId] = { text: goal || '', date: new Date().toDateString() };
+      return { ...prev, deckGoals };
+    });
     setShowGoalModal(false);
     setGoalInput('');
   };
+
+  // Aktuelles Lernziel für das aktive Deck
+  const currentDeckGoal = activeDeckId
+    ? (userStats.deckGoals || {})[activeDeckId]
+    : null;
+  const currentGoalText = currentDeckGoal?.date === new Date().toDateString()
+    ? currentDeckGoal.text
+    : null;
 
   // localStorage-Import durchführen
   const handleImport = async () => {
@@ -735,10 +747,10 @@ function App() {
             {activeDeck && (
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-sm font-medium text-slate-300 truncate max-w-[80px] sm:max-w-xs hidden sm:block">{activeDeck.name}</span>
-                {userStats.todayGoalText && userStats.todayGoalDate === new Date().toDateString() && (
+                {currentGoalText && (
                   <span className="hidden sm:flex items-center gap-1 text-xs text-sky-400/70 truncate max-w-[150px]">
                     <Target className="w-3 h-3 shrink-0" />
-                    {userStats.todayGoalText}
+                    {currentGoalText}
                   </span>
                 )}
               </div>
@@ -1429,7 +1441,8 @@ function DashboardTab({ decks, setDecks, onSelectDeck, parseFlashcards, shuffleA
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {groupMembers.map(member => {
               const isCurrentUser = currentUser && member.id === currentUser.id;
-              const isLearningToday = member.stats.todayGoalDate === new Date().toDateString();
+              const memberDeckGoals = member.stats.deckGoals || {};
+              const isLearningToday = Object.values(memberDeckGoals).some(g => g.date === new Date().toDateString());
               const memberStreak = member.stats.streak || 0;
 
               return (
