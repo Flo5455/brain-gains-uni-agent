@@ -54,7 +54,7 @@ export async function listUsers() {
   if (!isSupabaseConfigured()) return [];
 
   const { data, error } = await supabase
-    .from('users')
+    .from('dt_users')
     .select('id, name, created_at')
     .order('name');
 
@@ -73,7 +73,7 @@ export async function createUser(name) {
 
   // Prüfen ob Name schon existiert
   const { data: existing } = await supabase
-    .from('users')
+    .from('dt_users')
     .select('id, name')
     .eq('name', trimmed)
     .maybeSingle();
@@ -82,7 +82,7 @@ export async function createUser(name) {
 
   // Neuen User anlegen
   const { data, error } = await supabase
-    .from('users')
+    .from('dt_users')
     .insert({ name: trimmed })
     .select('id, name')
     .single();
@@ -94,14 +94,14 @@ export async function createUser(name) {
 
   // Standardmäßig alle eingebauten Decks aktivieren
   for (const deckId of BUNDLED_DECK_IDS) {
-    await supabase.from('user_bundled_decks').upsert({
+    await supabase.from('dt_user_bundled_decks').upsert({
       user_id: data.id,
       deck_id: deckId
     });
   }
 
   // Default-Stats anlegen
-  await supabase.from('user_stats').upsert({
+  await supabase.from('dt_user_stats').upsert({
     user_id: data.id,
     stats: DEFAULT_STATS
   });
@@ -113,7 +113,7 @@ export async function deleteUser(userId) {
   if (!isSupabaseConfigured()) return false;
 
   const { error } = await supabase
-    .from('users')
+    .from('dt_users')
     .delete()
     .eq('id', userId);
 
@@ -144,7 +144,7 @@ export async function loadUserDecks(userId) {
 
   // 1. Eingebaute Deck-Mitgliedschaften laden
   const { data: bundledMemberships } = await supabase
-    .from('user_bundled_decks')
+    .from('dt_user_bundled_decks')
     .select('deck_id')
     .eq('user_id', userId);
 
@@ -153,7 +153,7 @@ export async function loadUserDecks(userId) {
   // Fehlende gebündelte Decks automatisch aktivieren (z.B. nach App-Update)
   for (const deckId of BUNDLED_DECK_IDS) {
     if (!activeBundledIds.includes(deckId)) {
-      await supabase.from('user_bundled_decks').upsert({
+      await supabase.from('dt_user_bundled_decks').upsert({
         user_id: userId,
         deck_id: deckId
       });
@@ -163,7 +163,7 @@ export async function loadUserDecks(userId) {
 
   // 2. Benutzererstellte Decks laden
   const { data: userDecks } = await supabase
-    .from('user_decks')
+    .from('dt_user_decks')
     .select('id, name, created_at')
     .eq('user_id', userId);
 
@@ -172,7 +172,7 @@ export async function loadUserDecks(userId) {
   let userCardsMap = {};
   if (userDeckIds.length > 0) {
     const { data: userCards } = await supabase
-      .from('user_cards')
+      .from('dt_user_cards')
       .select('*')
       .in('deck_id', userDeckIds);
 
@@ -194,7 +194,7 @@ export async function loadUserDecks(userId) {
 
   if (allDeckIds.length > 0) {
     const { data: progress } = await supabase
-      .from('card_progress')
+      .from('dt_card_progress')
       .select('*')
       .eq('user_id', userId)
       .in('deck_id', allDeckIds);
@@ -214,7 +214,7 @@ export async function loadUserDecks(userId) {
 
   // 5. Materialien laden
   const { data: materials } = await supabase
-    .from('deck_materials')
+    .from('dt_deck_materials')
     .select('*')
     .eq('user_id', userId);
 
@@ -272,7 +272,7 @@ export async function loadUserStats(userId) {
   }
 
   const { data, error } = await supabase
-    .from('user_stats')
+    .from('dt_user_stats')
     .select('stats')
     .eq('user_id', userId)
     .maybeSingle();
@@ -284,7 +284,7 @@ export async function loadUserStats(userId) {
 export async function saveUserStats(userId, stats) {
   if (!isSupabaseConfigured()) return;
 
-  await supabase.from('user_stats').upsert({
+  await supabase.from('dt_user_stats').upsert({
     user_id: userId,
     stats
   });
@@ -297,7 +297,7 @@ export async function saveUserStats(userId, stats) {
 export async function saveCardProgress(userId, deckId, cardId, fields) {
   if (!isSupabaseConfigured()) return;
 
-  await supabase.from('card_progress').upsert({
+  await supabase.from('dt_card_progress').upsert({
     user_id: userId,
     deck_id: deckId,
     card_id: cardId,
@@ -329,7 +329,7 @@ export async function saveCardProgressBatch(userId, deckId, cards) {
   // Supabase upsert in Batches von 500
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
-    await supabase.from('card_progress').upsert(batch);
+    await supabase.from('dt_card_progress').upsert(batch);
   }
 }
 
@@ -341,7 +341,7 @@ export async function createUserDeck(userId, deck) {
   if (!isSupabaseConfigured()) return;
 
   // Deck-Metadaten speichern
-  await supabase.from('user_decks').upsert({
+  await supabase.from('dt_user_decks').upsert({
     id: deck.id,
     user_id: userId,
     name: deck.name,
@@ -361,7 +361,7 @@ export async function createUserDeck(userId, deck) {
 
     for (let i = 0; i < cardRows.length; i += 500) {
       const batch = cardRows.slice(i, i + 500);
-      await supabase.from('user_cards').upsert(batch);
+      await supabase.from('dt_user_cards').upsert(batch);
     }
   }
 
@@ -376,17 +376,17 @@ export async function deleteUserDeck(userId, deckId) {
 
   if (isBundledDeck(deckId)) {
     // Eingebautes Deck: nur Mitgliedschaft + Fortschritt löschen
-    await supabase.from('user_bundled_decks').delete()
+    await supabase.from('dt_user_bundled_decks').delete()
       .eq('user_id', userId).eq('deck_id', deckId);
   } else {
     // Benutzererstelltes Deck: komplett löschen (CASCADE löscht user_cards)
-    await supabase.from('user_decks').delete().eq('id', deckId);
+    await supabase.from('dt_user_decks').delete().eq('id', deckId);
   }
 
   // Fortschritt und Materialien löschen
-  await supabase.from('card_progress').delete()
+  await supabase.from('dt_card_progress').delete()
     .eq('user_id', userId).eq('deck_id', deckId);
-  await supabase.from('deck_materials').delete()
+  await supabase.from('dt_deck_materials').delete()
     .eq('user_id', userId).eq('deck_id', deckId);
 }
 
@@ -395,7 +395,7 @@ export async function updateDeckCards(userId, deckId, cards) {
   if (!isSupabaseConfigured() || isBundledDeck(deckId)) return;
 
   // Alte Karten löschen und neu einfügen
-  await supabase.from('user_cards').delete().eq('deck_id', deckId);
+  await supabase.from('dt_user_cards').delete().eq('deck_id', deckId);
 
   const cardRows = cards.map(c => ({
     id: c.id,
@@ -408,7 +408,7 @@ export async function updateDeckCards(userId, deckId, cards) {
 
   for (let i = 0; i < cardRows.length; i += 500) {
     const batch = cardRows.slice(i, i + 500);
-    await supabase.from('user_cards').upsert(batch);
+    await supabase.from('dt_user_cards').upsert(batch);
   }
 }
 
@@ -419,7 +419,7 @@ export async function updateDeckCards(userId, deckId, cards) {
 export async function saveDeckMaterials(userId, deckId, scriptText, sampleExamText) {
   if (!isSupabaseConfigured()) return;
 
-  await supabase.from('deck_materials').upsert({
+  await supabase.from('dt_deck_materials').upsert({
     user_id: userId,
     deck_id: deckId,
     script_text: scriptText || '',
@@ -453,7 +453,7 @@ export async function importLocalStorageData(userId) {
       for (const deck of decks) {
         if (isBundledDeck(deck.id)) {
           // Eingebautes Deck: nur Fortschritt importieren
-          await supabase.from('user_bundled_decks').upsert({
+          await supabase.from('dt_user_bundled_decks').upsert({
             user_id: userId,
             deck_id: deck.id
           });
@@ -494,7 +494,7 @@ export async function loadAllUsersWithStats() {
   if (!isSupabaseConfigured()) return [];
 
   const { data: users, error } = await supabase
-    .from('users')
+    .from('dt_users')
     .select('id, name, created_at')
     .order('name');
 
@@ -503,7 +503,7 @@ export async function loadAllUsersWithStats() {
   // Stats für alle User laden
   const userIds = users.map(u => u.id);
   const { data: allStats } = await supabase
-    .from('user_stats')
+    .from('dt_user_stats')
     .select('user_id, stats')
     .in('user_id', userIds);
 
@@ -548,7 +548,7 @@ export async function syncDecksToSupabase(userId, decks) {
     // Benutzererstellte Decks: Karten-Definitionen aktualisieren
     if (!isBundledDeck(deck.id)) {
       // Sicherstellen dass Deck existiert
-      await supabase.from('user_decks').upsert({
+      await supabase.from('dt_user_decks').upsert({
         id: deck.id,
         user_id: userId,
         name: deck.name,
